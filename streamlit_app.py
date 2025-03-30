@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import xlwings as xw
+import openpyxl
 import os
 import tempfile
 import time
@@ -12,41 +12,24 @@ def process_excel(before_file_path, template_file_path):
         st.error("Template file not found or empty!")
         return None
     
-    app = xw.App(visible=False)
-    try:
-        wb = app.books.open(template_file_path, update_links=False, read_only=False)
-        template_sheet = wb.sheets[0]
+    # เปิดไฟล์ template โดยใช้ openpyxl แทน xlwings
+    wb = openpyxl.load_workbook(template_file_path)
+    template_sheet = wb.active
+    
+    for _, row in df.iterrows():
+        store_code = int(row.iloc[1]) if not pd.isna(row.iloc[1]) else 0
+        sheet_name = str(store_code)[:31]
         
-        for _, row in df.iterrows():
-            store_code = int(row.iloc[1]) if not pd.isna(row.iloc[1]) else 0
-            sheet_name = str(store_code)[:31]
-            
-            if sheet_name not in [s.name for s in wb.sheets]:
-                new_sheet = template_sheet.copy(after=wb.sheets[wb.sheets.count - 1])
-                new_sheet.name = sheet_name
-            else:
-                new_sheet = wb.sheets[sheet_name]
-            
-            # เอาส่วน barcode ออก
-            # barcode_path_jpg = os.path.join(barcode_folder, f"{store_code}.jpg")
-            # barcode_path_png = os.path.join(barcode_folder, f"{store_code}.png")
-            # barcode_path = barcode_path_png if os.path.exists(barcode_path_png) else barcode_path_jpg
-            
-            # print(f"Checking barcode file: {barcode_path}")
-            # if os.path.exists(barcode_path) and os.path.getsize(barcode_path) > 0:
-            #     target_cell = new_sheet.range("C2")
-            #     left = target_cell.left + (target_cell.width - barcode_width) / 2
-            #     top = target_cell.top + (target_cell.height - barcode_height) / 2
-            #     new_sheet.pictures.add(barcode_path, left=left, top=top, width=barcode_width, height=barcode_height)
-            # else:
-            #     print(f"❌ Barcode not found for {store_code}")
-        
-        output_path = os.path.join(tempfile.gettempdir(), "all_stores.xlsx")
-        wb.save(output_path)
-        return output_path
-    finally:
-        wb.close()
-        app.quit()
+        if sheet_name not in wb.sheetnames:
+            new_sheet = wb.copy_worksheet(template_sheet)
+            new_sheet.title = sheet_name
+        else:
+            new_sheet = wb[sheet_name]
+    
+    # บันทึกไฟล์ใหม่
+    output_path = os.path.join(tempfile.gettempdir(), "all_stores.xlsx")
+    wb.save(output_path)
+    return output_path
 
 st.title("📊 Excel Processing Web App")
 
