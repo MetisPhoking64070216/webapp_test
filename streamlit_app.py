@@ -7,7 +7,7 @@ import tempfile
 import time
 import zipfile
 
-def process_excel(before_file_path, template_file_path, selected_columns, cell_positions_dict, split_column, split_method, skiprows, sheet_name_col, barcode_folder, barcode_col, barcode_cells, barcode_size):
+def process_excel(before_file_path, template_file_path, selected_columns, cell_positions_dict, split_column, split_method, skiprows, sheet_name_col, barcode_folder, barcode_col, barcode_cells, barcode_size, enable_barcode):
     df = pd.read_excel(before_file_path, skiprows=skiprows)
 
     for col in df.columns:
@@ -50,7 +50,7 @@ def process_excel(before_file_path, template_file_path, selected_columns, cell_p
             for cell_pos in cell_positions:
                 new_sheet[cell_pos] = value
 
-        if barcode_folder and barcode_col in df.columns:
+        if enable_barcode and barcode_folder and barcode_col in df.columns:
             barcode_value = str(row[barcode_col])
             barcode_path_png = os.path.join(barcode_folder, f"{barcode_value}.png")
             barcode_path_jpg = os.path.join(barcode_folder, f"{barcode_value}.jpg")
@@ -64,20 +64,16 @@ def process_excel(before_file_path, template_file_path, selected_columns, cell_p
                     col_letter = ''.join(filter(str.isalpha, cell))
                     row_number = ''.join(filter(str.isdigit, cell))
                     if col_letter and row_number:
-                        # คำนวณขนาดของเซลล์
-                        cell_width = new_sheet.column_dimensions[col_letter].width * 7  # ปรับขนาดเซลล์ตามขนาดของคอลัมน์
+                        cell_width = new_sheet.column_dimensions[col_letter].width * 7
                         cell_height = new_sheet.row_dimensions[int(row_number)].height
 
-                        # คำนวณตำแหน่งกลางเซลล์
-                        x_offset = (cell_width - img.width) / 2  # คำนวณตำแหน่งแนวนอนให้กลาง
-                        y_offset = (cell_height - img.height) / 2  # คำนวณตำแหน่งแนวตั้งให้กลาง
-                        
-                        # ตั้งค่า anchor ใหม่ให้ตรงกลางเซลล์
+                        x_offset = (cell_width - img.width) / 2
+                        y_offset = (cell_height - img.height) / 2
+
                         anchor = f"{col_letter}{row_number}"
-                        img.anchor = anchor  # ตั้งค่า anchor ให้ตรงกับตำแหน่งของเซลล์
+                        img.anchor = anchor
                         new_sheet.add_image(img, anchor)
-                        
-                        # ปรับขนาดเซลล์หากจำเป็น
+
                         new_sheet.column_dimensions[col_letter].width = max(cell_width / 7, new_sheet.column_dimensions[col_letter].width)
                         new_sheet.row_dimensions[int(row_number)].height = max(cell_height, new_sheet.row_dimensions[int(row_number)].height)
 
@@ -121,19 +117,27 @@ for col in selected_columns:
 split_column = st.selectbox("เลือกคอลัมน์ที่ต้องการ split", ["(ไม่เลือก)"] + column_options)
 split_method = st.selectbox("เลือกวิธีการ split", ["Remove Numbers", "Other Method"])
 
-barcode_col = st.selectbox("เลือกคอลัมน์ที่ใช้จับคู่กับไฟล์ Barcode", ["(ไม่เลือก)"] + column_options)
-barcode_cells_input = st.text_input("ระบุตำแหน่งเซลล์ของ Barcode (เช่น A1, B2, C3)")
-barcode_cells = [cell.strip() for cell in barcode_cells_input.split(",") if cell.strip()]
-barcode_width = st.number_input("ระบุกว้างของ Barcode", min_value=10, value=100, step=10)
-barcode_height = st.number_input("ระบุสูงของ Barcode", min_value=10, value=50, step=10)
+enable_barcode = st.checkbox("ใส่ Barcode ลงในไฟล์", value=False)
 
+barcode_col = None
+barcode_cells = []
+barcode_width = 0
+barcode_height = 0
 barcode_folder = None
-if barcode_zip:
-    temp_barcode_dir = os.path.join(tempfile.gettempdir(), "barcode_images")
-    os.makedirs(temp_barcode_dir, exist_ok=True)
-    with zipfile.ZipFile(barcode_zip, 'r') as zip_ref:
-        zip_ref.extractall(temp_barcode_dir)
-    barcode_folder = temp_barcode_dir
+
+if enable_barcode:
+    barcode_col = st.selectbox("เลือกคอลัมน์ที่ใช้จับคู่กับไฟล์ Barcode", ["(ไม่เลือก)"] + column_options)
+    barcode_cells_input = st.text_input("ระบุตำแหน่งเซลล์ของ Barcode (เช่น A1, B2, C3)")
+    barcode_cells = [cell.strip() for cell in barcode_cells_input.split(",") if cell.strip()]
+    barcode_width = st.number_input("ระบุกว้างของ Barcode", min_value=10, value=100, step=10)
+    barcode_height = st.number_input("ระบุสูงของ Barcode", min_value=10, value=50, step=10)
+
+    if barcode_zip:
+        temp_barcode_dir = os.path.join(tempfile.gettempdir(), "barcode_images")
+        os.makedirs(temp_barcode_dir, exist_ok=True)
+        with zipfile.ZipFile(barcode_zip, 'r') as zip_ref:
+            zip_ref.extractall(temp_barcode_dir)
+        barcode_folder = temp_barcode_dir
 
 if st.button("Generate Excel File"):
     if before_file and template_file and selected_columns and cell_positions_dict:
@@ -148,7 +152,21 @@ if st.button("Generate Excel File"):
         
         time.sleep(1)
         
-        output_file = process_excel(before_file_path, template_file_path, selected_columns, cell_positions_dict, split_column, split_method, skiprows, sheet_name_col, barcode_folder, barcode_col, barcode_cells, (barcode_width, barcode_height))
+        output_file = process_excel(
+            before_file_path,
+            template_file_path,
+            selected_columns,
+            cell_positions_dict,
+            split_column,
+            split_method,
+            skiprows,
+            sheet_name_col,
+            barcode_folder,
+            barcode_col,
+            barcode_cells,
+            (barcode_width, barcode_height),
+            enable_barcode
+        )
         if output_file:
             with open(output_file, "rb") as file:
                 st.download_button("Download Processed Excel", file, file_name="processed_excel.xlsx")
